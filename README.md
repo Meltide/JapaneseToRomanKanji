@@ -121,6 +121,25 @@ python rename_audio.py "D:\Music" --overrides my_names.json --apply
 
 这些数据文件已经随程序提供，通常不需要改动。重新生成的方法见 `tools/build_data.py` 顶部说明；原始 JMdict / KANJIDIC2 数据不随程序分发
 
+## 自动构建 Windows EXE
+
+仓库已配置 GitHub Actions：[build-exe.yml](.github/workflows/build-exe.yml)。每次 `git push`（任意分支）都会在 `windows-latest` 上自动：
+
+1. 安装 `requirements.txt` 和 PyInstaller；
+2. 用 [JapaneseAudioRenamer.spec](JapaneseAudioRenamer.spec) 构建单文件 `JapaneseAudioRenamer.exe`；
+3. 运行一次冒烟测试，确认 EXE 能输出 `Mind Brand`；
+4. 把 EXE 作为构建产物上传，保留 30 天。
+
+在 GitHub 仓库的 **Actions → Build Windows EXE → 对应运行 → Artifacts** 下载 `JapaneseAudioRenamer-windows-x64` 即可。这个 EXE 已内置 `data/` 和三个 Python 依赖，目标机器不需要安装 Python。
+
+本地构建：
+
+```powershell
+python -m pip install -r requirements.txt "pyinstaller==6.22.3"
+python -m PyInstaller --noconfirm --clean JapaneseAudioRenamer.spec
+.\dist\JapaneseAudioRenamer.exe --help
+```
+
 ## 测试
 
 ```powershell

@@ -39,7 +39,8 @@ except ImportError as exc:  # pragma: no cover - helpful message for users
     raise SystemExit(1)
 
 
-BASE_DIR = Path(__file__).resolve().parent
+# When frozen by PyInstaller, data/ is unpacked under sys._MEIPASS.
+BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 DATA_DIR = BASE_DIR / "data"
 
 DEFAULT_EXTENSIONS = (
