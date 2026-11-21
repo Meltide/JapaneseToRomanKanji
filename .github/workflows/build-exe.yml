@@ -30,12 +30,17 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install "pyinstaller==6.22.3"
 
-      - name: Build one-file EXE
+      - name: Run tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -v
+
+      - name: Build one-file EXEs
         shell: pwsh
         run: |
           python -m PyInstaller --noconfirm --clean JapaneseAudioRenamer.spec
 
-      - name: Smoke test the EXE
+      - name: Smoke test the CLI EXE
         shell: pwsh
         run: |
           $env:PYTHONUTF8 = "1"
@@ -44,13 +49,24 @@ jobs:
           $output = & ".\dist\JapaneseAudioRenamer.exe" ".\smoke-test" 2>&1 | Out-String
           Write-Host $output
           if ($output -notmatch "Mind Brand") {
-            throw "EXE smoke test failed: expected 'Mind Brand' in output."
+            throw "CLI EXE smoke test failed: expected 'Mind Brand' in output."
           }
 
-      - name: Upload EXE
+      - name: Smoke test the GUI EXE
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path ".\dist\JapaneseAudioRenamerGUI.exe").Path
+          $process = Start-Process -FilePath $exe -ArgumentList "--self-test" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "GUI EXE self-test failed with exit code $($process.ExitCode)."
+          }
+
+      - name: Upload EXEs
         uses: actions/upload-artifact@v4
         with:
           name: JapaneseAudioRenamer-windows-x64
-          path: dist/JapaneseAudioRenamer.exe
+          path: |
+            dist/JapaneseAudioRenamer.exe
+            dist/JapaneseAudioRenamerGUI.exe
           if-no-files-found: error
           retention-days: 30

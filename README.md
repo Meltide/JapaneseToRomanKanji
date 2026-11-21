@@ -34,6 +34,33 @@ python -m pip install -r requirements.txt
 
 ## 使用
 
+### 图形界面（Tkinter）
+
+不习惯命令行可以直接运行：
+
+```powershell
+python gui.py
+```
+
+也可以把文件夹作为初始目录：
+
+```powershell
+python gui.py "D:\Music\东方"
+```
+
+GUI 支持：
+
+- 选择文件夹、递归子文件夹；
+- 预览原文件名和新文件名；
+- 切换「片假名只转罗马音」模式；
+- 自定义扩展名和名称覆盖表；
+- 确认后批量重命名，自动处理重名冲突；
+- 扫描和重命名在后台线程执行，不会卡住界面。
+
+如果使用构建好的 EXE，双击 `JapaneseAudioRenamerGUI.exe` 即可。
+
+### 命令行
+
 先预览（`--dry-run` 是默认行为）：
 
 ```powershell
@@ -126,11 +153,14 @@ python rename_audio.py "D:\Music" --overrides my_names.json --apply
 仓库已配置 GitHub Actions：[build-exe.yml](.github/workflows/build-exe.yml)。每次 `git push`（任意分支）都会在 `windows-latest` 上自动：
 
 1. 安装 `requirements.txt` 和 PyInstaller；
-2. 用 [JapaneseAudioRenamer.spec](JapaneseAudioRenamer.spec) 构建单文件 `JapaneseAudioRenamer.exe`；
-3. 运行一次冒烟测试，确认 EXE 能输出 `Mind Brand`；
-4. 把 EXE 作为构建产物上传，保留 30 天。
+2. 运行完整测试；
+3. 用 [JapaneseAudioRenamer.spec](JapaneseAudioRenamer.spec) 构建两个单文件 EXE：
+   - `JapaneseAudioRenamer.exe`：命令行版；
+   - `JapaneseAudioRenamerGUI.exe`：Tkinter 图形界面版；
+4. 分别对两个 EXE 做冒烟测试；
+5. 把两个 EXE 作为构建产物上传，保留 30 天。
 
-在 GitHub 仓库的 **Actions → Build Windows EXE → 对应运行 → Artifacts** 下载 `JapaneseAudioRenamer-windows-x64` 即可。这个 EXE 已内置 `data/` 和三个 Python 依赖，目标机器不需要安装 Python。
+在 GitHub 仓库的 **Actions → Build Windows EXE → 对应运行 → Artifacts** 下载 `JapaneseAudioRenamer-windows-x64` 即可。压缩包内含两个 EXE，都已内置 `data/` 和三个 Python 依赖，目标机器不需要安装 Python。
 
 本地构建：
 
@@ -138,6 +168,7 @@ python rename_audio.py "D:\Music" --overrides my_names.json --apply
 python -m pip install -r requirements.txt "pyinstaller==6.22.3"
 python -m PyInstaller --noconfirm --clean JapaneseAudioRenamer.spec
 .\dist\JapaneseAudioRenamer.exe --help
+.\dist\JapaneseAudioRenamerGUI.exe
 ```
 
 ## 测试
@@ -146,7 +177,7 @@ python -m PyInstaller --noconfirm --clean JapaneseAudioRenamer.spec
 python -m unittest discover -s tests -v
 ```
 
-测试覆盖了上面五个示例，以及汉字简化、国字读音、平假名分词、助词、片假名复合词、`--no-loanwords` 模式、半角片假名和文件名安全处理
+测试覆盖了上面五个示例，以及汉字简化、国字读音、平假名分词、助词、片假名复合词、`--no-loanwords` 模式、半角片假名、文件名安全处理和 GUI 预览逻辑
 
 ## 已知限制
 
