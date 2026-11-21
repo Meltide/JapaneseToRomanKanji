@@ -706,7 +706,19 @@ def iter_audio_files(folder: Path, recursive: bool, extensions: set[str]) -> Ite
             yield path
 
 
+def _configure_stdio() -> None:
+    """Avoid UnicodeEncodeError when Windows redirects stdout to cp1252."""
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except Exception:
+            pass
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    _configure_stdio()
     parser = argparse.ArgumentParser(
         description="把音频文件名中的日文转换为「简体汉字 + 罗马音」。默认只预览，不修改文件。",
         formatter_class=argparse.RawDescriptionHelpFormatter,
