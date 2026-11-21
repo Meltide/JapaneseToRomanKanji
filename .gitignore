@@ -221,3 +221,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project-local temporary environments / dictionary build inputs
+.deps/
+.deps2/
+.deps3/
+.vendor/
+.fugashi/
+.tmp/
+.idea/
