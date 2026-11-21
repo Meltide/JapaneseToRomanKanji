@@ -24,6 +24,7 @@ import sys
 import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
 
@@ -107,6 +108,16 @@ def is_japanese_char(ch: str) -> bool:
     )
 
 
+@lru_cache(maxsize=8192)
+def is_gb2312_char(ch: str) -> bool:
+    """Whether a character belongs to the GB2312 simplified-Chinese set."""
+    try:
+        ch.encode("gb2312")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Small helpers
 
@@ -157,6 +168,7 @@ class Converter:
         self.hiragana_words: dict[str, int] = self._load_json("hiragana_words.json")
         self.kokuji_data: dict = self._load_json("kokuji.json")
         self.variant_map: dict[str, str] = self._load_json("variant_map.json")
+        self.shinjitai_map: dict[str, str] = self._load_json("shinjitai_map.json")
         self.kokuji: set[str] = set(self.kokuji_data.get("kokuji", []))
         self.kokuji_readings: dict[str, list[str]] = self.kokuji_data.get("readings", {})
         self.name_overrides: dict[str, str] = dict(self._load_json("name_overrides.json"))
@@ -584,36 +596,40 @@ class Converter:
     # -- kanji --------------------------------------------------------------
 
     def _kanji_pieces(self, text: str, reading: str, surface: str) -> list[Piece]:
-        if not any(ch in self.kokuji for ch in text):
-            return [Piece(self._simplify_kanji(text), "kanji")]
-
         pieces: list[Piece] = []
         buf: list[str] = []
         for ch in text:
-            if ch in self.kokuji:
+            converted = self._convert_kanji_char(ch)
+            if converted is None:
                 if buf:
-                    pieces.append(Piece(self._simplify_kanji("".join(buf)), "kanji"))
+                    pieces.append(Piece("".join(buf), "kanji"))
                     buf = []
-                romaji = self._kokuji_romaji(ch, reading, surface)
+                romaji = self._kanji_romaji(ch, reading, surface)
                 if romaji:
                     pieces.append(Piece(title_english(romaji), "romaji"))
-            else:
-                buf.append(ch)
+                else:
+                    # Extremely rare: no GB2312 form and no reading.
+                    pieces.append(Piece(ch, "kanji"))
+                continue
+            buf.append(converted)
         if buf:
-            pieces.append(Piece(self._simplify_kanji("".join(buf)), "kanji"))
+            pieces.append(Piece("".join(buf), "kanji"))
         return pieces
 
-    def _simplify_kanji(self, text: str) -> str:
-        converted = zhconv.convert(text, "zh-cn")
-        if len(converted) != len(text):
-            converted = "".join(zhconv.convert(ch, "zh-cn") for ch in text)
-        out: list[str] = []
-        for original, simplified in zip(text, converted):
-            out.append(self.variant_map.get(original, simplified))
-        return "".join(out)
+    def _convert_kanji_char(self, ch: str) -> str | None:
+        """Return a GB2312 simplified form, or None to romanise the character."""
+        candidates = [
+            self.variant_map.get(ch),
+            self.shinjitai_map.get(ch),
+            zhconv.convert(ch, "zh-cn"),
+        ]
+        for candidate in candidates:
+            if candidate and all(is_gb2312_char(c) for c in candidate):
+                return candidate
+        return None
 
-    def _kokuji_romaji(self, ch: str, token_reading: str, surface: str) -> str:
-        # Best case: the token is exactly the kokuji, so Janome knows the reading.
+    def _kanji_romaji(self, ch: str, token_reading: str, surface: str) -> str:
+        # Best case: the token is exactly this character, so Janome knows it.
         if surface == ch and token_reading and token_reading != "*":
             return self._romanize_kana(token_reading)
 

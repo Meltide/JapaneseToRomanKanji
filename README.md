@@ -14,7 +14,8 @@
 | `インドア系ならトラックメイカー.mp3`                      | `Indoor系Nara Track Maker.mp3`                               |
 | `チルノのパーフェクトさんすう教室 - miko.flac`            | `Cirno No Perfect Sansuu教室 - miko.flac`                    |
 | `緋色月下、狂咲ノ絶 (1st Anniversary Remix) - nayuta.wav` | `绯色月下、狂Saki No绝 (1st Anniversary Remix) - nayuta.wav` |
-| `魔理沙は大変なものを盗んでいきました - ARM/miko.aac`     | `魔理沙Wa大変Na Mono Wo盗N De Iki Mashita - ARM/miko.aac`    |
+| `魔理沙は大変なものを盗んでいきました - ARM/miko.aac`     | `魔理沙Wa大变Na Mono Wo盗N De Iki Mashita - ARM/miko.aac`    |
+| `夜桜街道 - 沙紗飛鳥.mp3`                                 | `夜樱街道 - 沙纱飞鸟.mp3`                                    |
 
 > Windows 文件名不能包含 `/`，实际文件中的斜杠会按 Windows 规则替换为 `_`；表里的斜杠仅用于展示“保留原文”的效果。
 
@@ -128,7 +129,7 @@ python rename_audio.py "D:\Music" --overrides my_names.json --apply
 
 1. **分词**：用 Janome 对日文部分分词；纯平假名再用内置词表做一次动态规划分词，避免把 `さんすう` 拆成 `さんす` + `う`
 2. **片假名**：默认查内置的外来语词表，还原为原文，例如 `マインド` → `mind`、`ブランド` → `brand`、`トラックメイカー` → `track maker`。词表由 JMdict 的片假名/外来语条目生成；查不到时退回罗马音。加 `--no-loanwords` 可跳过这一步，全部按罗马音输出
-3. **汉字**：用 zhconv 转成简体，例如 `緋` → `绯`、`絶` → `绝`。日文国字/异体字（如 `咲`）没有合适的简体对应字时，按日语读音转罗马音，例如 `咲` → `Saki`
+3. **汉字**：用 zhconv 和日文新字体映射转成简体，并检查结果是否属于 **GB2312** 字符集；例如 `緋` → `绯`、`絶` → `绝`、`桜` → `樱`、`変` → `变`。如果某个汉字没有 GB2312 简体形式（例如 `咲`），则按日语读音转罗马音，例如 `咲` → `Saki`
 4. **平假名**：转罗马音；助词 `は` / `へ` / `を` 分别读作 `Wa` / `E` / `Wo`
 5. **大小写**：每个罗马音/英文单词首字母大写
 6. **空格**：
@@ -142,11 +143,12 @@ python rename_audio.py "D:\Music" --overrides my_names.json --apply
   - 已收录常见东方人名及其变种：全名（`レミリア・スカーレット` → `Remilia Scarlet`）、短名（`レミィ`、`フラン`、`パチュ`、`ミスティ`、`メディ`、`ナズ`）、平假名写法（`ちるの`、`れみりあ`、`ふらん`、`ぱちゅ`、`うどんげ`）。
   - 名字后面接 `ちゃん` 等后缀时会分开输出，例如 `チルノちゃん` → `Cirno Chan`；`--no-loanwords` 模式下仍会保持名字的完整分词，但输出罗马音，例如 `ちるの` → `Chiruno`。
 - `data/variant_map.json`：额外的异体字 → 简体字映射，例如 `髙` → `高`
+- `data/shinjitai_map.json`：日文新字体 → GB2312 简体字映射，例如 `桜` → `樱`、`変` → `变`
 - `data/kokuji.json`：需要转罗马音的日文国字/异体字列表及读音
 - `data/katakana_english.json`：片假名 → 外来语原文词表
 - `data/hiragana_words.json`：平假名分词词表
 
-这些数据文件已经随程序提供，通常不需要改动。重新生成的方法见 `tools/build_data.py` 顶部说明；原始 JMdict / KANJIDIC2 数据不随程序分发
+这些数据文件已经随程序提供，通常不需要改动。`data/shinjitai_map.json` 可用 `python tools/build_shinjitai_map.py` 重新生成；其余词典数据的生成方法见 `tools/build_data.py` 顶部说明。原始 JMdict / KANJIDIC2 数据不随程序分发
 
 ## 自动构建 Windows EXE
 
@@ -177,12 +179,12 @@ python -m PyInstaller --noconfirm --clean JapaneseAudioRenamer.spec
 python -m unittest discover -s tests -v
 ```
 
-测试覆盖了上面五个示例，以及汉字简化、国字读音、平假名分词、助词、片假名复合词、`--no-loanwords` 模式、半角片假名、文件名安全处理和 GUI 预览逻辑
+测试覆盖了上面的示例，以及 GB2312 汉字检查、日文新字体映射、国字读音、平假名分词、助词、片假名复合词、`--no-loanwords` 模式、半角片假名、文件名安全处理和 GUI 预览逻辑
 
 ## 已知限制
 
 - 片假名外来语的“原文”依赖词表；词表没有的专名会退回罗马音，可用 `--overrides` 补充
-- 日语汉字有多音读法；没有简体对应字而需要转罗马音时，程序使用分词器给出的读音或 pykakasi 的默认读音，个别名字可能读错
+- 日语汉字有多音读法；没有 GB2312 简体形式而需要转罗马音时，程序使用分词器给出的读音或 pykakasi 的默认读音，个别名字可能读错
 - 只改文件名，不改音频标签（ID3 / Vorbis Comment 等）
 - 程序以 Windows 文件名规则做安全处理：`<>:"/\|?*` 会替换为 `_`，保留名（`CON` 等）会加前缀
 - 默认不递归；需要处理子文件夹时加 `--recursive`

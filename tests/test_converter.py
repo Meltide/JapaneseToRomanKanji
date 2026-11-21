@@ -37,8 +37,15 @@ class ExampleTests(unittest.TestCase):
     def test_long_sentence(self) -> None:
         self.check(
             "魔理沙は大変なものを盗んでいきました - ARM/miko.aac",
-            "魔理沙Wa大変Na Mono Wo盗N De Iki Mashita - ARM/miko.aac",
+            "魔理沙Wa大变Na Mono Wo盗N De Iki Mashita - ARM/miko.aac",
         )
+
+    def test_gb2312_shinjitai(self) -> None:
+        self.check(
+            "夜桜街道 - 沙紗飛鳥.mp3",
+            "夜樱街道 - 沙纱飞鸟.mp3",
+        )
+        self.check("楽園図鑑", "乐园图鉴")
 
 
 class NameVariantTests(unittest.TestCase):
@@ -126,7 +133,7 @@ class UnitTests(unittest.TestCase):
         self.assertEqual(self.converter.convert_stem("緋色"), "绯色")
         self.assertEqual(self.converter.convert_stem("絶"), "绝")
         # 変 is already the Japanese simplified form; zhconv leaves it alone.
-        self.assertEqual(self.converter.convert_stem("大変"), "大変")
+        self.assertEqual(self.converter.convert_stem("大変"), "大变")
         self.assertEqual(self.converter.convert_stem("髙"), "高")
         self.assertEqual(self.converter.convert_stem("﨑"), "崎")
 

@@ -15,6 +15,12 @@ under the Creative Commons Attribution-ShareAlike 4.0 International License
 - https://www.edrdg.org/wiki/index.php/KANJIDIC_Project
 - https://creativecommons.org/licenses/by-sa/4.0/
 
+`data/shinjitai_map.json` is generated from the shinjitai/kyūjitai table at
+https://github.com/dahlia/shinjitai-table, whose source is the Japanese
+Agency for Cultural Affairs' Jōyō Kanji Table.  The kyūjitai forms are
+converted to Simplified Chinese with zhconv and kept only when the result is
+in GB2312.
+
 The remaining files (`data/variant_map.json`, `data/name_overrides.json`)
 are small curated lists shipped with this program.
 
