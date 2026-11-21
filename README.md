@@ -111,7 +111,9 @@ python rename_audio.py "D:\Music" --overrides my_names.json --apply
 
 ## 自定义
 
-- `data/name_overrides.json`：片假名词语/专名的固定译法。示例里 `チルノ` → `Cirno` 就来自这里，也可以用它修正个别外来语
+- `data/name_overrides.json`：片假名词语/专名的固定译法。示例里 `チルノ` → `Cirno` 就来自这里，也可以用它修正个别外来语。
+  - 已收录常见东方人名及其变种：全名（`レミリア・スカーレット` → `Remilia Scarlet`）、短名（`レミィ`、`フラン`、`パチュ`、`ミスティ`、`メディ`、`ナズ`）、平假名写法（`ちるの`、`れみりあ`、`ふらん`、`ぱちゅ`、`うどんげ`）。
+  - 名字后面接 `ちゃん` 等后缀时会分开输出，例如 `チルノちゃん` → `Cirno Chan`；`--no-loanwords` 模式下仍会保持名字的完整分词，但输出罗马音，例如 `ちるの` → `Chiruno`。
 - `data/variant_map.json`：额外的异体字 → 简体字映射，例如 `髙` → `高`
 - `data/kokuji.json`：需要转罗马音的日文国字/异体字列表及读音
 - `data/katakana_english.json`：片假名 → 外来语原文词表

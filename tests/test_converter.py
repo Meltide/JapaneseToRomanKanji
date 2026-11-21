@@ -41,6 +41,47 @@ class ExampleTests(unittest.TestCase):
         )
 
 
+class NameVariantTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.converter = Converter()
+
+    def test_cirno_variants(self) -> None:
+        self.assertEqual(self.converter.convert_stem("チルノ"), "Cirno")
+        self.assertEqual(self.converter.convert_stem("チル"), "Cirno")
+        self.assertEqual(self.converter.convert_stem("ちるの"), "Cirno")
+        self.assertEqual(self.converter.convert_stem("チルノちゃん"), "Cirno Chan")
+        self.assertEqual(self.converter.convert_stem("ちるのちゃん"), "Cirno Chan")
+
+    def test_remilia_and_flandre_variants(self) -> None:
+        self.assertEqual(self.converter.convert_stem("レミィ"), "Remilia")
+        self.assertEqual(self.converter.convert_stem("れみりあ"), "Remilia")
+        self.assertEqual(self.converter.convert_stem("フラン"), "Flandre")
+        self.assertEqual(self.converter.convert_stem("ふらん"), "Flandre")
+        self.assertEqual(
+            self.converter.convert_stem("レミリア・スカーレット"),
+            "Remilia Scarlet",
+        )
+        self.assertEqual(
+            self.converter.convert_stem("フランドール・スカーレット"),
+            "Flandre Scarlet",
+        )
+
+    def test_other_name_variants(self) -> None:
+        self.assertEqual(self.converter.convert_stem("パチュ"), "Patchouli")
+        self.assertEqual(self.converter.convert_stem("ミスティ"), "Mystia")
+        self.assertEqual(self.converter.convert_stem("メディ"), "Medicine")
+        self.assertEqual(self.converter.convert_stem("ナズ"), "Nazrin")
+        self.assertEqual(self.converter.convert_stem("うどんげ"), "Reisen")
+        self.assertEqual(self.converter.convert_stem("もこ"), "Mokou")
+
+    def test_hiragana_spellings(self) -> None:
+        self.assertEqual(self.converter.convert_stem("ぱちゅ"), "Patchouli")
+        self.assertEqual(self.converter.convert_stem("みすてぃ"), "Mystia")
+        self.assertEqual(self.converter.convert_stem("めでぃ"), "Medicine")
+        self.assertEqual(self.converter.convert_stem("なず"), "Nazrin")
+
+
 class NoLoanwordTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -69,6 +110,11 @@ class NoLoanwordTests(unittest.TestCase):
     def test_contractions_are_not_split(self) -> None:
         self.assertEqual(self.converter.convert_stem("コンビニ"), "Konbini")
         self.assertEqual(self.converter.convert_stem("パソコン"), "Pasokon")
+
+    def test_hiragana_names_are_romanised(self) -> None:
+        self.assertEqual(self.converter.convert_stem("ちるの"), "Chiruno")
+        self.assertEqual(self.converter.convert_stem("れみりあ"), "Remiria")
+        self.assertEqual(self.converter.convert_stem("もこ"), "Moko")
 
 
 class UnitTests(unittest.TestCase):

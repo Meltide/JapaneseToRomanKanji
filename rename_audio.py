@@ -163,6 +163,13 @@ class Converter:
         self.name_overrides = {
             normalize_unicode(k): v for k, v in self.name_overrides.items()
         }
+        # Hiragana spellings such as ちるの / れみりあ should use the same
+        # English names as their katakana counterparts.
+        self.hiragana_overrides = {
+            key: value
+            for key, value in self.name_overrides.items()
+            if key and all(is_hiragana(ch) or ch == "\u30fc" for ch in key)
+        }
 
     def _load_json(self, name: str):
         path = self.data_dir / name
@@ -239,7 +246,11 @@ class Converter:
             run = "".join(hira_run)
             hira_run.clear()
             for word in self._split_hiragana(run):
-                pieces.append(self._romaji_piece(self._romanize_kana(word), word))
+                value = self.hiragana_overrides.get(word) if self.use_loanwords else None
+                if value:
+                    pieces.extend(self._english_pieces(value))
+                else:
+                    pieces.append(self._romaji_piece(self._romanize_kana(word), word))
 
         def flush_kata() -> None:
             if not kata_run:
@@ -307,9 +318,13 @@ class Converter:
                 pieces.extend(self._kanji_pieces(text, reading, surface))
             elif kind == "hira":
                 if text:
-                    pieces.append(
-                        Piece(self._title_romaji(self._romanize_kana(text)), "romaji")
-                    )
+                    value = self.hiragana_overrides.get(text) if self.use_loanwords else None
+                    if value:
+                        pieces.extend(self._english_pieces(value))
+                    else:
+                        pieces.append(
+                            Piece(self._title_romaji(self._romanize_kana(text)), "romaji")
+                        )
             elif kind == "kata":
                 pieces.extend(self._katakana_pieces(text))
             else:
@@ -365,10 +380,14 @@ class Converter:
                 word = run[i:end]
                 if len(word) < 2:
                     continue
-                freq = self.hiragana_words.get(word)
-                if freq is None:
-                    continue
-                score = best_score[i] + len(word) * len(word) + freq * 0.4
+                override = self.hiragana_overrides.get(word)
+                if override is not None:
+                    score = best_score[i] + len(word) * len(word) + 100.0
+                else:
+                    freq = self.hiragana_words.get(word)
+                    if freq is None:
+                        continue
+                    score = best_score[i] + len(word) * len(word) + freq * 0.4
                 if score > best_score[end]:
                     best_score[end] = score
                     back[end] = (i, word)
@@ -418,7 +437,7 @@ class Converter:
         key = normalize_unicode(text)
         plain = key.replace("・", "")
         if not self.use_loanwords:
-            return self._katakana_romaji_pieces(plain)
+            return self._katakana_romaji_pieces(key)
         value = self.name_overrides.get(key) or self.name_overrides.get(plain)
         if value is None:
             value = self.katakana_english.get(key) or self.katakana_english.get(plain)
@@ -449,6 +468,13 @@ class Converter:
         """Romanise katakana without replacing it with an English loanword."""
         if not text:
             return []
+        if "・" in text:
+            pieces: list[Piece] = []
+            for part in text.split("・"):
+                if part:
+                    pieces.extend(self._english_pieces(self._romanize_kana(part)))
+            return pieces
+
         full_value = self.name_overrides.get(text) or self.katakana_english.get(text)
 
         if full_value and " " not in full_value:
