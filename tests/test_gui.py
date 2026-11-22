@@ -37,6 +37,18 @@ class GuiLogicTests(unittest.TestCase):
             )
             self.assertEqual(by_name["マインドブランド.mp3"].tag, "collision")
 
+    def test_preview_keep_original(self) -> None:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent) as tmp:
+            folder = Path(tmp)
+            (folder / "夜桜街道 - 沙紗飛鳥.mp3").write_bytes(b"")
+            rows = build_preview_rows(
+                folder, False, {".mp3"}, self.converter, keep_original=True
+            )
+            self.assertEqual(
+                rows[0].target.name,
+                "夜桜街道 - 沙紗飛鳥（夜樱街道 - 沙纱飞鸟）.mp3",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

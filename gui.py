@@ -20,7 +20,11 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 from rename_audio import (
     DEFAULT_EXTENSIONS,
     Converter,
+    compose_output_name,
+    default_history_path,
     iter_audio_files,
+    make_history_record,
+    restore_history,
     safe_filename,
     unique_target,
 )
@@ -59,11 +63,15 @@ def build_preview_rows(
     recursive: bool,
     extensions: set[str],
     converter: Converter,
+    keep_original: bool = False,
 ) -> list[PreviewRow]:
     rows: list[PreviewRow] = []
     for source in iter_audio_files(folder, recursive, extensions):
         try:
-            new_name = safe_filename(converter.convert_filename(source.name))
+            converted_name = converter.convert_filename(source.name)
+            new_name = safe_filename(
+                compose_output_name(source.name, converted_name, keep_original)
+            )
             if new_name == source.name:
                 rows.append(
                     PreviewRow(source, new_name, source, "跳过（无需转换）", "skip")
@@ -113,6 +121,7 @@ class AudioRenamerApp:
         self.folder_var = tk.StringVar()
         self.recursive_var = tk.BooleanVar(value=False)
         self.no_loanwords_var = tk.BooleanVar(value=False)
+        self.keep_original_var = tk.BooleanVar(value=False)
         self.extensions_var = tk.StringVar(value=",".join(DEFAULT_EXTENSIONS))
         self.overrides_var = tk.StringVar()
         self.status_var = tk.StringVar(value="请选择音频文件夹，然后点击「扫描预览」。")
@@ -184,23 +193,32 @@ class AudioRenamerApp:
         )
         self.no_loanwords_check.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
+        self.keep_original_check = ttk.Checkbutton(
+            options,
+            text="保留原曲名：原名（转换后）",
+            variable=self.keep_original_var,
+        )
+        self.keep_original_check.grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(4, 0)
+        )
+
         ttk.Label(options, text="扩展名").grid(
-            row=2, column=0, sticky="w", pady=(8, 0)
+            row=3, column=0, sticky="w", pady=(8, 0)
         )
         self.extensions_entry = ttk.Entry(options, textvariable=self.extensions_var)
         self.extensions_entry.grid(
-            row=2, column=1, sticky="ew", padx=(8, 0), pady=(8, 0)
+            row=3, column=1, sticky="ew", padx=(8, 0), pady=(8, 0)
         )
 
         ttk.Label(options, text="覆盖表").grid(
-            row=3, column=0, sticky="w", pady=(4, 0)
+            row=4, column=0, sticky="w", pady=(4, 0)
         )
         self.overrides_entry = ttk.Entry(options, textvariable=self.overrides_var)
         self.overrides_entry.grid(
-            row=3, column=1, sticky="ew", padx=(8, 0), pady=(4, 0)
+            row=4, column=1, sticky="ew", padx=(8, 0), pady=(4, 0)
         )
         overrides_buttons = ttk.Frame(options)
-        overrides_buttons.grid(row=3, column=2, sticky="e", padx=(8, 0), pady=(4, 0))
+        overrides_buttons.grid(row=4, column=2, sticky="e", padx=(8, 0), pady=(4, 0))
         self.overrides_browse = ttk.Button(
             overrides_buttons, text="选择...", command=self._choose_overrides
         )
@@ -214,7 +232,7 @@ class AudioRenamerApp:
             options,
             text="覆盖表是可选的 JSON，例如 {\"チルノ\": \"Cirno\"}；留空则使用内置表。",
             foreground="#666666",
-        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
         # Action buttons.
         actions = ttk.Frame(outer)
@@ -236,6 +254,10 @@ class AudioRenamerApp:
             actions, text="清空列表", command=self._clear_rows
         )
         self.clear_button.pack(side="left", padx=(8, 0))
+        self.restore_button = ttk.Button(
+            actions, text="还原记录...", command=self.start_restore
+        )
+        self.restore_button.pack(side="left", padx=(8, 0))
         ttk.Label(
             actions,
             text="默认只预览；重命名前会再次确认。",
@@ -247,11 +269,13 @@ class AudioRenamerApp:
             self.folder_button,
             self.recursive_check,
             self.no_loanwords_check,
+            self.keep_original_check,
             self.extensions_entry,
             self.overrides_entry,
             self.overrides_browse,
             self.overrides_clear,
             self.clear_button,
+            self.restore_button,
         ]
 
         # Preview table.
@@ -305,6 +329,7 @@ class AudioRenamerApp:
             self.folder_var,
             self.recursive_var,
             self.no_loanwords_var,
+            self.keep_original_var,
             self.extensions_var,
             self.overrides_var,
         ):
@@ -406,6 +431,7 @@ class AudioRenamerApp:
             self.recursive_var.get(),
             extensions,
             self.no_loanwords_var.get(),
+            self.keep_original_var.get(),
             overrides_text,
         )
         threading.Thread(target=self._scan_worker, args=args, daemon=True).start()
@@ -416,11 +442,14 @@ class AudioRenamerApp:
         recursive: bool,
         extensions: set[str],
         no_loanwords: bool,
+        keep_original: bool,
         overrides_text: str,
     ) -> None:
         try:
             converter = self._get_converter(overrides_text, no_loanwords)
-            rows = build_preview_rows(folder, recursive, extensions, converter)
+            rows = build_preview_rows(
+                folder, recursive, extensions, converter, keep_original
+            )
             self.queue.put(("scan_done", (rows, None)))
         except Exception as exc:
             self.queue.put(("scan_done", ([], str(exc))))
@@ -465,27 +494,50 @@ class AudioRenamerApp:
         ):
             return
 
+        log_path = default_history_path(Path(self.folder_var.get().strip()))
         self._set_busy(True)
         self._set_status(f"正在重命名 {len(rows)} 个文件……")
         threading.Thread(
-            target=self._rename_worker, args=(rows,), daemon=True
+            target=self._rename_worker,
+            args=(rows, log_path, self.keep_original_var.get()),
+            daemon=True,
         ).start()
 
-    def _rename_worker(self, rows: list[PreviewRow]) -> None:
+    def _rename_worker(
+        self,
+        rows: list[PreviewRow],
+        log_path: Path,
+        keep_original: bool,
+    ) -> None:
         renamed = 0
         failed = 0
         errors: list[str] = []
-        for row in rows:
-            try:
-                target = row.target
-                if target.exists() and target != row.source:
-                    target = unique_target(target)
-                row.source.rename(target)
-                renamed += 1
-            except OSError as exc:
-                failed += 1
-                errors.append(f"{row.source.name}: {exc}")
-        self.queue.put(("rename_done", (renamed, failed, errors)))
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            history_file = log_path.open("a", encoding="utf-8")
+        except OSError as exc:
+            self.queue.put(
+                ("rename_done", (0, 0, [f"无法写入更改记录 {log_path}：{exc}"], log_path))
+            )
+            return
+
+        try:
+            for row in rows:
+                try:
+                    target = row.target
+                    if target.exists() and target != row.source:
+                        target = unique_target(target)
+                    row.source.rename(target)
+                    record = make_history_record(row.source, target, keep_original)
+                    history_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    history_file.flush()
+                    renamed += 1
+                except OSError as exc:
+                    failed += 1
+                    errors.append(f"{row.source.name}: {exc}")
+        finally:
+            history_file.close()
+        self.queue.put(("rename_done", (renamed, failed, errors, log_path)))
 
     # -- queue / callbacks --------------------------------------------------
 
@@ -497,8 +549,11 @@ class AudioRenamerApp:
                     rows, error = payload
                     self._on_scan_done(rows, error)
                 elif kind == "rename_done":
-                    renamed, failed, errors = payload
-                    self._on_rename_done(renamed, failed, errors)
+                    renamed, failed, errors, log_path = payload
+                    self._on_rename_done(renamed, failed, errors, log_path)
+                elif kind == "restore_done":
+                    restored, skipped, failed, errors, log_path = payload
+                    self._on_restore_done(restored, skipped, failed, errors, log_path)
         except queue.Empty:
             pass
         if not self.closing:
@@ -538,7 +593,7 @@ class AudioRenamerApp:
             )
 
     def _on_rename_done(
-        self, renamed: int, failed: int, errors: list[str]
+        self, renamed: int, failed: int, errors: list[str], log_path: Path
     ) -> None:
         self._set_busy(False)
         self._set_status(f"重命名完成：成功 {renamed} 个，失败 {failed} 个。")
@@ -548,11 +603,91 @@ class AudioRenamerApp:
                 detail += f"\n……另有 {len(errors) - 10} 个错误"
             messagebox.showwarning(
                 "重命名完成",
-                f"成功 {renamed} 个，失败 {failed} 个。\n\n{detail}",
+                f"成功 {renamed} 个，失败 {failed} 个。\n\n{detail}\n\n"
+                f"更改记录：{log_path}",
             )
         else:
-            messagebox.showinfo("重命名完成", f"成功重命名 {renamed} 个文件。")
+            messagebox.showinfo(
+                "重命名完成",
+                f"成功重命名 {renamed} 个文件。\n\n更改记录：{log_path}",
+            )
         self.start_scan()
+
+    def start_restore(self) -> None:
+        if self.busy:
+            return
+        folder_text = self.folder_var.get().strip()
+        initial: dict = {}
+        if folder_text and Path(folder_text).is_dir():
+            initial["initialdir"] = folder_text
+            initial["initialfile"] = "rename_history.jsonl"
+        selected = filedialog.askopenfilename(
+            title="选择更改记录",
+            filetypes=[("JSONL 记录", "*.jsonl"), ("所有文件", "*.*")],
+            **initial,
+        )
+        if not selected:
+            return
+        log_path = Path(selected)
+        if not log_path.is_file():
+            messagebox.showerror("记录文件无效", f"文件不存在：\n{log_path}")
+            return
+        if not messagebox.askyesno(
+            "确认还原",
+            "将按照记录从新文件名还原为原文件名。\n\n"
+            "如果原文件名已经存在，对应记录会被跳过。确定继续吗？",
+        ):
+            return
+        self._set_busy(True)
+        self._set_status("正在按记录还原文件名……")
+        threading.Thread(
+            target=self._restore_worker, args=(log_path,), daemon=True
+        ).start()
+
+    def _restore_worker(self, log_path: Path) -> None:
+        try:
+            restored, skipped, failed, errors, _actions = restore_history(
+                log_path, apply=True
+            )
+        except Exception as exc:
+            self.queue.put(
+                ("restore_done", (0, 0, 1, [str(exc)], log_path))
+            )
+            return
+        self.queue.put(
+            ("restore_done", (restored, skipped, failed, errors, log_path))
+        )
+
+    def _on_restore_done(
+        self,
+        restored: int,
+        skipped: int,
+        failed: int,
+        errors: list[str],
+        log_path: Path,
+    ) -> None:
+        self._set_busy(False)
+        self._set_status(
+            f"还原完成：成功 {restored} 个，跳过 {skipped} 个，失败 {failed} 个。"
+        )
+        if failed:
+            detail = "\n".join(errors[:10])
+            if len(errors) > 10:
+                detail += f"\n……另有 {len(errors) - 10} 个错误"
+            messagebox.showwarning(
+                "还原完成",
+                f"成功 {restored} 个，跳过 {skipped} 个，失败 {failed} 个。\n\n"
+                f"{detail}\n\n记录：{log_path}",
+            )
+        else:
+            messagebox.showinfo(
+                "还原完成",
+                f"成功还原 {restored} 个文件，跳过 {skipped} 个。\n\n"
+                f"记录：{log_path}",
+            )
+        folder_text = self.folder_var.get().strip()
+        if folder_text and Path(folder_text).is_dir():
+            self.start_scan()
 
     def _report_callback_exception(self, exc, value, tb) -> None:
         messagebox.showerror("程序错误", f"{value}")

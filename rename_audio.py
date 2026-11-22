@@ -23,6 +23,7 @@ import re
 import sys
 import unicodedata
 from dataclasses import dataclass, field
+from datetime import datetime
 from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
@@ -711,6 +712,104 @@ def unique_target(target: Path) -> Path:
     raise RuntimeError(f"无法为 {target} 找到不冲突的文件名")
 
 
+def compose_output_name(
+    original_filename: str,
+    converted_filename: str,
+    keep_original: bool,
+) -> str:
+    """Return the final filename, optionally as 原名（转换后）.ext."""
+    if not keep_original:
+        return converted_filename
+
+    original_suffix = Path(original_filename).suffix
+    converted_suffix = Path(converted_filename).suffix
+    original_stem = (
+        original_filename[:-len(original_suffix)]
+        if original_suffix
+        else original_filename
+    )
+    converted_stem = (
+        converted_filename[:-len(converted_suffix)]
+        if converted_suffix
+        else converted_filename
+    )
+    if original_stem == converted_stem:
+        return converted_filename
+    return f"{original_stem}（{converted_stem}）{converted_suffix}"
+
+
+def default_history_path(folder: Path) -> Path:
+    return folder / "rename_history.jsonl"
+
+
+def make_history_record(original: Path, new: Path, keep_original: bool) -> dict:
+    return {
+        "time": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "original": str(original.resolve()),
+        "new": str(new.resolve()),
+        "keep_original": bool(keep_original),
+    }
+
+
+def read_history(path: Path) -> list[dict]:
+    records: list[dict] = []
+    with path.open("r", encoding="utf-8-sig") as fh:
+        for line_number, line in enumerate(fh, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"记录文件第 {line_number} 行不是有效 JSON：{exc}"
+                ) from exc
+            if not isinstance(record, dict) or not record.get("original") or not record.get("new"):
+                raise ValueError(f"记录文件第 {line_number} 行缺少 original/new 字段")
+            records.append(record)
+    return records
+
+
+def restore_history(
+    path: Path, apply: bool
+) -> tuple[int, int, int, list[str], list[tuple[str, Path, Path, str]]]:
+    """Restore renames in reverse order. Returns counts and actions."""
+    records = read_history(path)
+    restored = 0
+    skipped = 0
+    failed = 0
+    errors: list[str] = []
+    actions: list[tuple[str, Path, Path, str]] = []
+
+    for record in reversed(records):
+        original = Path(record["original"])
+        new = Path(record["new"])
+        if not new.exists():
+            skipped += 1
+            actions.append(("skip", new, original, "新文件不存在"))
+            continue
+        if original.exists():
+            skipped += 1
+            actions.append(("skip", new, original, "原文件已存在"))
+            continue
+        if not apply:
+            restored += 1
+            actions.append(("preview", new, original, ""))
+            continue
+        try:
+            new.rename(original)
+        except OSError as exc:
+            failed += 1
+            message = f"{new}：{exc}"
+            errors.append(message)
+            actions.append(("failed", new, original, str(exc)))
+        else:
+            restored += 1
+            actions.append(("restored", new, original, ""))
+
+    return restored, skipped, failed, errors, actions
+
+
 # ---------------------------------------------------------------------------
 # CLI
 
@@ -745,10 +844,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             "  python rename_audio.py D:\\Music --recursive --apply\n"
         ),
     )
-    parser.add_argument("folder", type=Path, help="要处理的文件夹")
+    parser.add_argument("folder", type=Path, nargs="?", help="要处理的文件夹")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true", help="真正重命名（默认只预览）")
     mode.add_argument("--dry-run", action="store_true", help="只预览（默认行为）")
+    parser.add_argument(
+        "--keep-original",
+        action="store_true",
+        help="新文件名保留原曲名：原名（转换后）.扩展名",
+    )
+    parser.add_argument(
+        "--log",
+        type=Path,
+        help="更改记录文件（默认：文件夹/rename_history.jsonl）",
+    )
+    parser.add_argument(
+        "--restore",
+        type=Path,
+        metavar="LOG",
+        help="按更改记录反向还原（默认只预览，加 --apply 执行）",
+    )
     parser.add_argument("--recursive", "-r", action="store_true", help="递归处理子文件夹")
     parser.add_argument(
         "--extensions",
@@ -770,6 +885,36 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--quiet", "-q", action="store_true", help="只输出汇总")
     parser.add_argument("--version", action="version", version="%(prog)s 1.0.0")
     args = parser.parse_args(argv)
+
+    if args.restore:
+        if not args.restore.is_file():
+            parser.error(f"记录文件不存在：{args.restore}")
+        try:
+            restored, skipped, failed, errors, actions = restore_history(
+                args.restore, apply=args.apply
+            )
+        except (OSError, ValueError) as exc:
+            parser.error(f"无法读取记录文件 {args.restore}：{exc}")
+        for action, new, original, detail in actions:
+            if args.quiet:
+                continue
+            if action == "skip":
+                print(f"[跳过] {new}：{detail}")
+            elif action == "failed":
+                print(f"[还原失败] {new} -> {original}：{detail}", file=sys.stderr)
+            elif action == "preview":
+                print(f"[还原预览] {new}  ->  {original}")
+            else:
+                print(f"[已还原] {new}  ->  {original}")
+        verb = "可还原" if not args.apply else "已还原"
+        print(
+            f"\n{verb} {restored} 个文件，跳过 {skipped} 个，失败 {failed} 个。"
+            + ("（预览模式；加 --apply 才会真正还原）" if not args.apply else "")
+        )
+        return 1 if failed else 0
+
+    if args.folder is None:
+        parser.error("请提供要处理的文件夹，或使用 --restore 指定记录文件")
 
     folder: Path = args.folder
     if not folder.exists() or not folder.is_dir():
@@ -807,11 +952,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     skipped = 0
     failed = 0
     preview_only = not args.apply
+    log_path = args.log or default_history_path(folder)
+    history_file = None
+    if not preview_only:
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            history_file = log_path.open("a", encoding="utf-8")
+        except OSError as exc:
+            print(f"无法写入更改记录 {log_path}：{exc}", file=sys.stderr)
+            return 1
 
     for path in files:
         old_name = path.name
         try:
-            new_name = safe_filename(converter.convert_filename(old_name))
+            converted_name = converter.convert_filename(old_name)
+            new_name = safe_filename(
+                compose_output_name(old_name, converted_name, args.keep_original)
+            )
         except Exception as exc:  # keep processing other files
             failed += 1
             print(f"[转换失败] {path}: {exc}", file=sys.stderr)
@@ -841,14 +998,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             continue
 
         renamed += 1
+        if history_file is not None:
+            try:
+                record = make_history_record(path, target, args.keep_original)
+                history_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+                history_file.flush()
+            except OSError as exc:
+                failed += 1
+                print(f"[记录失败] {target}：{exc}", file=sys.stderr)
         if not args.quiet:
             print(f"[完成] {old_name}  ->  {target.name}")
+
+    if history_file is not None:
+        history_file.close()
 
     verb = "可重命名" if preview_only else "已重命名"
     print(
         f"\n{verb} {renamed} 个文件，跳过 {skipped} 个，失败 {failed} 个。"
         + ("（预览模式；加 --apply 才会真正改名）" if preview_only else "")
     )
+    if not preview_only and renamed:
+        print(f"更改记录：{log_path}")
+        print(f"还原命令：python rename_audio.py --restore \"{log_path}\" --apply")
     return 1 if failed else 0
 
 

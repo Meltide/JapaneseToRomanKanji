@@ -54,8 +54,10 @@ GUI 支持：
 - 选择文件夹、递归子文件夹；
 - 预览原文件名和新文件名；
 - 切换「片假名只转罗马音」模式；
+- 保留原曲名（原名（转换后））；
 - 自定义扩展名和名称覆盖表；
 - 确认后批量重命名，自动处理重名冲突；
+- 自动写入更改记录，并可从记录还原；
 - 扫描和重命名在后台线程执行，不会卡住界面。
 
 如果使用构建好的 EXE，双击 `JapaneseAudioRenamerGUI.exe` 即可。
@@ -79,6 +81,43 @@ python rename_audio.py "D:\Music\东方" --apply
 ```powershell
 python rename_audio.py "D:\Music\东方" --recursive --apply
 ```
+
+### 保留原曲名
+
+`--keep-original` 会把新文件名写成「原曲名（转换后）」：
+
+```powershell
+python rename_audio.py "D:\Music\东方" --keep-original --apply
+```
+
+例如：
+
+```text
+夜桜街道 - 沙紗飛鳥.mp3
+→ 夜桜街道 - 沙紗飛鳥（夜樱街道 - 沙纱飞鸟）.mp3
+```
+
+### 更改记录与还原
+
+使用 `--apply` 时会自动在目标文件夹写入 `rename_history.jsonl`，记录每次重命名的原路径和新路径。也可以指定其他位置：
+
+```powershell
+python rename_audio.py "D:\Music\东方" --apply --log "D:\Music\rename_history.jsonl"
+```
+
+先预览还原：
+
+```powershell
+python rename_audio.py --restore "D:\Music\东方\rename_history.jsonl"
+```
+
+确认后执行还原：
+
+```powershell
+python rename_audio.py --restore "D:\Music\东方\rename_history.jsonl" --apply
+```
+
+还原按记录倒序执行；如果新文件不存在或原文件名已被占用，会跳过该条并给出提示。GUI 里也可以点击「还原记录...」选择 JSONL 文件。
 
 ### 片假名只转罗马音
 
@@ -120,6 +159,9 @@ python rename_audio.py "D:\Music" --overrides my_names.json --apply
 其他选项：
 
 ```text
+--keep-original                     新文件名保留原曲名：原名（转换后）.扩展名
+--log PATH                          指定更改记录文件
+--restore LOG                       按记录反向还原（默认预览，配合 --apply 执行）
 --no-loanwords, --katakana-romaji   片假名只转罗马音，不还原为英语/外来语
 --quiet, -q                          只输出汇总
 --version                            显示版本
@@ -179,12 +221,13 @@ python -m PyInstaller --noconfirm --clean JapaneseAudioRenamer.spec
 python -m unittest discover -s tests -v
 ```
 
-测试覆盖了上面的示例，以及 GB2312 汉字检查、日文新字体映射、国字读音、平假名分词、助词、片假名复合词、`--no-loanwords` 模式、半角片假名、文件名安全处理和 GUI 预览逻辑
+测试覆盖了上面的示例，以及 GB2312 汉字检查、日文新字体映射、国字读音、平假名分词、助词、片假名复合词、`--no-loanwords` 模式、保留原曲名、更改记录还原、半角片假名、文件名安全处理和 GUI 预览逻辑
 
 ## 已知限制
 
 - 片假名外来语的“原文”依赖词表；词表没有的专名会退回罗马音，可用 `--overrides` 补充
 - 日语汉字有多音读法；没有 GB2312 简体形式而需要转罗马音时，程序使用分词器给出的读音或 pykakasi 的默认读音，个别名字可能读错
 - 只改文件名，不改音频标签（ID3 / Vorbis Comment 等）
+- 更改记录保存的是绝对路径；如果重命名后移动了文件，还原时会跳过找不到原路径或新路径的记录
 - 程序以 Windows 文件名规则做安全处理：`<>:"/\|?*` 会替换为 `_`，保留名（`CON` 等）会加前缀
 - 默认不递归；需要处理子文件夹时加 `--recursive`
