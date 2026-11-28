@@ -2,10 +2,19 @@ name: Build Windows EXE
 
 on:
   push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "可选：发布到这个 tag（例如 v1.2.3）；留空只构建，不发布"
+        required: false
+        default: ""
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -15,6 +24,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -62,6 +73,16 @@ jobs:
             throw "GUI EXE self-test failed with exit code $($process.ExitCode)."
           }
 
+      - name: Package release archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item dist\JapaneseAudioRenamer.exe package\
+          Copy-Item dist\JapaneseAudioRenamerGUI.exe package\
+          Copy-Item LICENSE package\
+          Copy-Item README.md package\
+          Compress-Archive -Path package\* -DestinationPath dist\JapaneseAudioRenamer-windows-x64.zip -Force
+
       - name: Upload EXEs
         uses: actions/upload-artifact@v4
         with:
@@ -69,5 +90,23 @@ jobs:
           path: |
             dist/JapaneseAudioRenamer.exe
             dist/JapaneseAudioRenamerGUI.exe
+            dist/JapaneseAudioRenamer-windows-x64.zip
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release
+        if: github.event.deleted != true && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != ''))
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          name: "JapaneseToRomanKanji ${{ github.event.inputs.release_tag || github.ref_name }}"
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') || contains(github.event.inputs.release_tag, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          files: |
+            dist/JapaneseAudioRenamer-windows-x64.zip
+            dist/JapaneseAudioRenamer.exe
+            dist/JapaneseAudioRenamerGUI.exe
+            LICENSE

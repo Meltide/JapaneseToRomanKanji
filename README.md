@@ -202,9 +202,32 @@ python rename_audio.py "D:\Music" --overrides my_names.json --apply
    - `JapaneseAudioRenamer.exe`：命令行版；
    - `JapaneseAudioRenamerGUI.exe`：Tkinter 图形界面版；
 4. 分别对两个 EXE 做冒烟测试；
-5. 把两个 EXE 作为构建产物上传，保留 30 天。
+5. 把两个 EXE 作为构建产物上传，保留 30 天；
+6. 如果推送的是 `v*` tag，自动创建 GitHub Release，并附上两个 EXE 和自动生成的 Release Notes。
 
-在 GitHub 仓库的 **Actions → Build Windows EXE → 对应运行 → Artifacts** 下载 `JapaneseAudioRenamer-windows-x64` 即可。压缩包内含两个 EXE，都已内置 `data/` 和三个 Python 依赖，目标机器不需要安装 Python。
+在 GitHub 仓库的 **Actions → Build Windows EXE → 对应运行 → Artifacts** 下载 `JapaneseAudioRenamer-windows-x64` 即可。artifact 内含两个 EXE 和发布用 zip，都已内置 `data/` 和三个 Python 依赖，目标机器不需要安装 Python。
+
+### 发布 Release
+
+推送一个 `v` 开头的 tag 即可自动发布：
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+工作流会完成测试和构建后，在 **Releases** 页面创建 `v1.0.0`，上传：
+
+- `JapaneseAudioRenamer-windows-x64.zip`：包含两个 EXE、README 和 LICENSE；
+- `JapaneseAudioRenamer.exe`：命令行版；
+- `JapaneseAudioRenamerGUI.exe`：图形界面版；
+- `LICENSE`。
+
+带连字符的 tag（例如 `v1.0.0-beta.1`）会自动标记为 prerelease，Release 标题为 `JapaneseToRomanKanji v1.0.0`。也可以手动运行工作流，在 `release_tag` 输入框填入要发布的 tag。
+
+> 普通分支 push 只构建并上传 Actions artifact，不会创建 Release；只有 `v*` tag 或手动指定 `release_tag` 时才发布。
+
+Release 使用 `GITHUB_TOKEN` 发布，工作流已声明 `contents: write`。如果发布步骤返回 403，请到仓库 **Settings → Actions → General → Workflow permissions** 确认允许读写权限，或把默认权限设为 **Read and write permissions**。
 
 本地构建：
 
